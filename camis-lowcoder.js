@@ -3,38 +3,60 @@
         constructor(options = {}) {
             this.global = global;
             this.doc = global.document;
+
             this.config = {
-                momentJs: "https://unpkg.com/moment@2.29.4/min/moment.min.js",
+                dayjsJs: "https://unpkg.com/dayjs@1.11.13/dayjs.min.js",
                 antdCss: "https://unpkg.com/antd@6.3.2/dist/reset.css",
                 antdJs: "https://unpkg.com/antd@6.3.2/dist/antd.min.js",
                 embedHost: "https://sdk.lowcoder.cloud",
-                rootSelector: "#root",
+                rootId: "camis-root",
                 autoBoot: true,
-                antdTheme: "dark",
+                theme: {
+                    mode: "dark",
+                    token: {}
+                },
                 ...options
             };
 
             this._cache = {
-                momentPromise: null,
+                dayjsPromise: null,
                 antdPromise: null,
                 readyPromise: null,
-                reactRoots: new Map()
+                reactRoot: null
             };
         }
 
         configure(options = {}) {
-            Object.assign(this.config, options);
+            if (!options || typeof options !== "object") {
+                return this;
+            }
+
+            if (options.theme && typeof options.theme === "object") {
+                this.config.theme = {
+                    ...this.config.theme,
+                    ...options.theme,
+                    token: {
+                        ...(this.config.theme?.token || {}),
+                        ...(options.theme.token || {})
+                    }
+                };
+            }
+
+            const rest = { ...options };
+            delete rest.theme;
+
+            Object.assign(this.config, rest);
             return this;
         }
 
         loadCssOnce(url) {
             return new Promise((resolve, reject) => {
-                const exists = Array.from(
+                const existing = Array.from(
                     this.doc.querySelectorAll("link[rel='stylesheet']")
                 ).find((el) => el.href === url);
 
-                if (exists) {
-                    resolve(exists);
+                if (existing) {
+                    resolve(existing);
                     return;
                 }
 
@@ -51,18 +73,18 @@
 
         loadScriptOnce(url) {
             return new Promise((resolve, reject) => {
-                const exists = Array.from(
+                const existing = Array.from(
                     this.doc.querySelectorAll("script[src]")
                 ).find((el) => el.src === url);
 
-                if (exists) {
-                    if (exists.dataset.loaded === "true") {
-                        resolve(exists);
+                if (existing) {
+                    if (existing.dataset.loaded === "true") {
+                        resolve(existing);
                         return;
                     }
 
-                    exists.addEventListener("load", () => resolve(exists), { once: true });
-                    exists.addEventListener(
+                    existing.addEventListener("load", () => resolve(existing), { once: true });
+                    existing.addEventListener(
                         "error",
                         () => reject(new Error("Failed to load script: " + url)),
                         { once: true }
@@ -81,6 +103,32 @@
 
                 this.doc.head.appendChild(script);
             });
+        }
+
+        ensureHostGlobals() {
+            if (!this.global.React) {
+                throw new Error("window.React is required");
+            }
+
+            if (!this.global.ReactDOM || typeof this.global.ReactDOM.createRoot !== "function") {
+                throw new Error("window.ReactDOM.createRoot is required");
+            }
+
+            if (!this.global.Lowcoder || typeof this.global.Lowcoder.connect !== "function") {
+                throw new Error("window.Lowcoder.connect is required");
+            }
+        }
+
+        getRootElement() {
+            let rootEl = this.doc.getElementById(this.config.rootId);
+
+            if (!rootEl) {
+                rootEl = this.doc.createElement("div");
+                rootEl.id = this.config.rootId;
+                this.doc.body.appendChild(rootEl);
+            }
+
+            return rootEl;
         }
     }
 
@@ -103,24 +151,24 @@
             this.core = core;
         }
 
-        async ensureMoment() {
-            if (this.core.global.moment) {
-                return this.core.global.moment;
+        async ensureDayjs() {
+            if (this.core.global.dayjs) {
+                return this.core.global.dayjs;
             }
 
-            if (!this.core._cache.momentPromise) {
-                this.core._cache.momentPromise = (async () => {
-                    await this.core.loadScriptOnce(this.core.config.momentJs);
+            if (!this.core._cache.dayjsPromise) {
+                this.core._cache.dayjsPromise = (async () => {
+                    await this.core.loadScriptOnce(this.core.config.dayjsJs);
 
-                    if (!this.core.global.moment) {
-                        throw new Error("Moment loaded but window.moment is missing");
+                    if (!this.core.global.dayjs) {
+                        throw new Error("Dayjs loaded but window.dayjs is missing");
                     }
 
-                    return this.core.global.moment;
+                    return this.core.global.dayjs;
                 })();
             }
 
-            return this.core._cache.momentPromise;
+            return this.core._cache.dayjsPromise;
         }
 
         async ensureAntd() {
@@ -128,10 +176,12 @@
                 return this.core.global.antd;
             }
 
+            this.core.ensureHostGlobals();
+
             if (!this.core._cache.antdPromise) {
                 this.core._cache.antdPromise = (async () => {
                     await this.core.loadCssOnce(this.core.config.antdCss);
-                    await this.ensureMoment();
+                    await this.ensureDayjs();
                     await this.core.loadScriptOnce(this.core.config.antdJs);
 
                     if (!this.core.global.antd) {
@@ -146,6 +196,7 @@
         }
 
         async ensureAll() {
+            this.core.ensureHostGlobals();
             await this.ensureAntd();
         }
 
@@ -153,6 +204,7 @@
             if (!this.core._cache.readyPromise) {
                 this.core._cache.readyPromise = this.ensureAll();
             }
+
             return this.core._cache.readyPromise;
         }
     }
@@ -163,87 +215,76 @@
             this.assets = assets;
         }
 
-        getAntdThemeConfig() {
-            const antd = this.core.global.antd;
-            const themeApi = antd?.theme || {};
+        getThemeAlgorithm() {
+            const themeApi = this.core.global.antd.theme;
+            const mode = this.core.config.theme?.mode || "dark";
 
-            if (this.core.config.antdTheme === "dark") {
-                return {
-                    algorithm: themeApi.darkAlgorithm
-                };
+            if (mode === "light") {
+                return themeApi.defaultAlgorithm;
             }
 
+            if (mode === "compact") {
+                return themeApi.compactAlgorithm;
+            }
+
+            if (mode === "dark-compact") {
+                return [themeApi.darkAlgorithm, themeApi.compactAlgorithm];
+            }
+
+            return themeApi.darkAlgorithm;
+        }
+
+        getThemeConfig() {
             return {
-                algorithm: themeApi.defaultAlgorithm
+                algorithm: this.getThemeAlgorithm(),
+                token: {
+                    ...(this.core.config.theme?.token || {})
+                }
             };
         }
 
-        createWrappedElement(Connected) {
-            const { React, antd } = this.core.global;
-            const ConfigProvider = antd?.ConfigProvider;
-
-            if (!ConfigProvider) {
-                return React.createElement(Connected);
-            }
+        createElement(Component) {
+            const React = this.core.global.React;
+            const { ConfigProvider, App: AntdApp } = this.core.global.antd;
+            const Connected = this.core.global.Lowcoder.connect(Component);
 
             return React.createElement(
                 ConfigProvider,
                 {
-                    theme: this.getAntdThemeConfig()
+                    theme: this.getThemeConfig()
                 },
-                React.createElement(Connected)
+                React.createElement(
+                    AntdApp,
+                    null,
+                    React.createElement(Connected)
+                )
             );
         }
 
         async render(Component) {
             await this.assets.ready();
 
-            const { React, ReactDOM, Lowcoder } = this.core.global;
+            const ReactDOM = this.core.global.ReactDOM;
+            const rootEl = this.core.getRootElement();
+            const element = this.createElement(Component);
 
-            if (!Lowcoder || typeof Lowcoder.connect !== "function") {
-                throw new Error("Lowcoder.connect is not available");
+            if (this.core._cache.reactRoot) {
+                this.core._cache.reactRoot.unmount();
+                this.core._cache.reactRoot = null;
             }
 
-            if (!ReactDOM) {
-                throw new Error("ReactDOM is not available");
+            const root = ReactDOM.createRoot(rootEl);
+            root.render(element);
+            this.core._cache.reactRoot = root;
+
+            return root;
+        }
+
+        unmount() {
+            if (this.core._cache.reactRoot) {
+                this.core._cache.reactRoot.unmount();
+                this.core._cache.reactRoot = null;
             }
-
-            let rootEl = this.core.doc.getElementById("camis-root");
-
-            if (!rootEl) {
-                rootEl = this.core.doc.createElement("div");
-                rootEl.id = "camis-root";
-                this.core.doc.body.appendChild(rootEl);
-            }
-
-            const prevRoot = this.core._cache.reactRoots.get(rootEl);
-            if (prevRoot && typeof prevRoot.unmount === "function") {
-                prevRoot.unmount();
-            }
-
-            const Connected = Lowcoder.connect(Component);
-            const element = this.createWrappedElement(Connected);
-
-            if (typeof ReactDOM.createRoot === "function") {
-                const root = ReactDOM.createRoot(rootEl);
-                root.render(element);
-                this.core._cache.reactRoots.set(rootEl, root);
-                return root;
-            }
-
-            if (typeof ReactDOM.render === "function") {
-                ReactDOM.render(element, rootEl);
-                this.core._cache.reactRoots.set(rootEl, {
-                    unmount() {
-                        if (typeof ReactDOM.unmountComponentAtNode === "function") {
-                            ReactDOM.unmountComponentAtNode(rootEl);
-                        }
-                    }
-                });
-                return this.core._cache.reactRoots.get(rootEl);
-            }
-
-            throw new Error("No supported ReactDOM render API found");
         }
     }
 
@@ -378,14 +419,14 @@
             const parts = this.getJakartaParts(value);
             if (!parts) return fallback;
 
-            return `${parts.year}-${parts.month}-${parts.day}`;
+            return parts.year + "-" + parts.month + "-" + parts.day;
         }
 
         static dateYmdHm(value, fallback = "-") {
             const parts = this.getJakartaParts(value);
             if (!parts) return fallback;
 
-            return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+            return parts.year + "-" + parts.month + "-" + parts.day + " " + parts.hour + ":" + parts.minute;
         }
     }
 
@@ -405,7 +446,7 @@
                 return;
             }
 
-            if (this.detect && this.detect.isEmbed()) {
+            if (this.detect.isEmbed()) {
                 return this.runQuery(nextQueryName);
             }
 
@@ -451,10 +492,19 @@
         async render(Component) {
             return this.react.render(Component);
         }
+
+        unmount() {
+            return this.react.unmount();
+        }
     }
 
     global.CamisLowcoder = CamisLowcoder;
     global.CamisLowcoderFormat = CamisLowcoderFormat;
     global.CamisLowcoderComponent = CamisLowcoderComponent;
-    global.camisLowcoder = new CamisLowcoder();
+    global.camisLowcoder = new CamisLowcoder({
+        theme: {
+            mode: "dark",
+            token: {}
+        }
+    });
 })(window);
