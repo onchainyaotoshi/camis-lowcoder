@@ -218,10 +218,9 @@
     }
 
     class CamisLowcoderReact {
-        constructor(core, assets, bridge) {
+        constructor(core, assets) {
             this.core = core;
             this.assets = assets;
-            this.bridge = bridge;
         }
 
         async render(Component) {
@@ -252,36 +251,15 @@
 
             const Connected = Lowcoder.connect(Component);
 
-            const Reporter = () => {
-                React.useLayoutEffect(() => {
-                    if (!this.bridge || !this.core.config.autoReportSizeOnRender) {
-                        return;
-                    }
-
-                    const raf = this.core.global.requestAnimationFrame;
-                    if (typeof raf === "function") {
-                        raf(() => {
-                            this.bridge.report();
-                        });
-                    } else {
-                        setTimeout(() => {
-                            this.bridge.report();
-                        }, 16);
-                    }
-                }, []);
-
-                return React.createElement(Connected);
-            };
-
             if (typeof ReactDOM.createRoot === "function") {
                 const root = ReactDOM.createRoot(rootEl);
-                root.render(React.createElement(Reporter));
+                root.render(React.createElement(Connected));
                 this.core._cache.reactRoots.set(rootEl, root);
                 return root;
             }
 
             if (typeof ReactDOM.render === "function") {
-                ReactDOM.render(React.createElement(Reporter), rootEl);
+                ReactDOM.render(React.createElement(Connected), rootEl);
                 this.core._cache.reactRoots.set(rootEl, {
                     unmount() {
                         if (typeof ReactDOM.unmountComponentAtNode === "function") {
@@ -473,7 +451,7 @@
             this.detect = new CamisLowcoderDetect(this.core);
             this.assets = new CamisLowcoderAssets(this.core);
             this.bridge = new CamisLowcoderBridge(this.core);
-            this.react = new CamisLowcoderReact(this.core, this.assets, this.bridge);
+            this.react = new CamisLowcoderReact(this.core, this.assets);
             this.format = CamisLowcoderFormat;
 
             if (this.core.config.autoBoot) {
@@ -488,7 +466,44 @@
             return this;
         }
 
+        autoReportSizeFromComponent(deps = []) {
+            const React = this.core.global.React;
+
+            if (!React || !this.bridge || !this.core.config.autoReportSizeOnRender) {
+                return;
+            }
+
+            React.useLayoutEffect(() => {
+                const raf = this.core.global.requestAnimationFrame;
+                const cancelRaf = this.core.global.cancelAnimationFrame;
+
+                if (typeof raf === "function") {
+                    const id = raf(() => {
+                        this.bridge.report();
+                    });
+
+                    return () => {
+                        if (typeof cancelRaf === "function") {
+                            cancelRaf(id);
+                        }
+                    };
+                }
+
+                const timer = setTimeout(() => {
+                    this.bridge.report();
+                }, 16);
+
+                return () => clearTimeout(timer);
+            }, deps);
+        }
+
         component(props = {}) {
+            this.autoReportSizeFromComponent([
+                props?.model?.data,
+                props?.model?.mode,
+                props?.model?.title
+            ]);
+
             return new CamisLowcoderComponent(props, {
                 detect: this.detect,
                 format: this.format
