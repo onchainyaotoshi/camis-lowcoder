@@ -1,53 +1,62 @@
 # camis-lowcoder
 
-Lightweight helper SDK for building **Lowcoder custom components** with **React** and **Ant Design**.
+Lightweight helper SDK for building **Lowcoder custom components** with
+less boilerplate.
 
-This library removes repetitive boilerplate when developing custom components for Lowcoder and ensures compatibility between **Editor**, **Preview**, and **Embed** modes.
+`camis-lowcoder` helps you:
 
----
+-   auto-load **Ant Design**
+-   handle `runQuery` differences between **editor/preview** and
+    **embed/view**
+-   auto-create a React root container
+-   simplify `Lowcoder.connect(...)` + `ReactDOM.createRoot(...)`
 
-# Features
+------------------------------------------------------------------------
 
-* Automatically loads **Ant Design**
-* Handles **runQuery compatibility** between editor and embed
-* Simplifies **React + Lowcoder.connect rendering**
-* Avoids duplicate script/style loading
-* Works with **Lowcoder Community Edition**
-* Async-first modern API
+## Features
 
----
+-   Async-first API
+-   Automatic Ant Design loader
+-   Query compatibility helper
+-   Automatic root container creation
+-   Simple React render helper
+-   Small global SDK for Lowcoder custom components
 
-# Installation
+------------------------------------------------------------------------
 
-Include the library via CDN:
+## CDN
 
-```html
-<script src="https://cdn.jsdelivr.net/gh/YOUR_GITHUB_USERNAME/camis-lowcoder/camis-lowcoder.js"></script>
+Use it directly from jsDelivr:
+
+``` html
+<script src="https://cdn.jsdelivr.net/gh/onchainyaotoshi/camis-lowcoder/camis-lowcoder.js"></script>
 ```
 
-Or reference a specific version:
+You can also lock to a specific version:
 
-```html
-<script src="https://cdn.jsdelivr.net/gh/YOUR_GITHUB_USERNAME/camis-lowcoder@0.0.1/camis-lowcoder.js"></script>
+``` html
+<script src="https://cdn.jsdelivr.net/gh/onchainyaotoshi/camis-lowcoder@0.0.2/camis-lowcoder.js"></script>
 ```
 
----
+------------------------------------------------------------------------
 
-# Basic Usage
+## Basic Usage
 
-Create a container:
+You do **not** need to manually create a root container like:
 
-```html
+``` html
 <div id="root"></div>
 ```
 
-Define your component and render it:
+The library will create its own root container automatically.
 
-```html
+Example:
+
+``` html
+<script src="https://cdn.jsdelivr.net/gh/onchainyaotoshi/camis-lowcoder/camis-lowcoder.js"></script>
+
 <script type="text/babel">
-
 const MyComponent = ({ runQuery, model }) => {
-
   const { Button, Card, Space } = antd;
 
   return (
@@ -55,9 +64,7 @@ const MyComponent = ({ runQuery, model }) => {
       <Space>
         <Button
           type="primary"
-          onClick={() =>
-            camisLowcoder.query.run(runQuery, model.query)
-          }
+          onClick={() => camisLowcoder.runQuery(runQuery, model.query)}
         >
           Run Query
         </Button>
@@ -69,177 +76,155 @@ const MyComponent = ({ runQuery, model }) => {
 (async () => {
   await camisLowcoder.render(MyComponent);
 })();
-
 </script>
 ```
 
-No need to manually call:
+------------------------------------------------------------------------
 
-* `Lowcoder.connect`
-* `ReactDOM.createRoot`
-* Ant Design loader
+## What the library handles for you
 
----
+Without `camis-lowcoder`, you usually need to write:
 
-# API
+``` javascript
+const Connected = Lowcoder.connect(MyComponent);
 
-## ready()
+const rootEl = document.getElementById("root");
+const root = ReactDOM.createRoot(rootEl);
 
-Ensures Ant Design is loaded.
+root.render(
+  React.createElement(Connected)
+);
+```
 
-```javascript
+With `camis-lowcoder`, you only write:
+
+``` javascript
+await camisLowcoder.render(MyComponent);
+```
+
+------------------------------------------------------------------------
+
+## API
+
+### `camisLowcoder.ready()`
+
+Ensures Ant Design is loaded and returns the `antd` global.
+
+``` javascript
 const antd = await camisLowcoder.ready();
 ```
 
----
+------------------------------------------------------------------------
 
-## render(component)
+### `camisLowcoder.runQuery(runQuery, queryName)`
 
-Automatically connects and renders a Lowcoder component.
+Runs a Lowcoder query with runtime compatibility.
 
-```javascript
+``` javascript
+camisLowcoder.runQuery(runQuery, "query1");
+```
+
+This automatically resolves the difference between:
+
+Editor / Preview
+
+``` javascript
+runQuery({ queryName: "query1" });
+```
+
+Embed / View
+
+``` javascript
+runQuery("query1");
+```
+
+You can also use the domain-style API:
+
+``` javascript
+camisLowcoder.query.run(runQuery, "query1");
+```
+
+------------------------------------------------------------------------
+
+### `camisLowcoder.render(Component)`
+
+Automatically:
+
+-   ensures Ant Design is loaded
+-   connects your component using `Lowcoder.connect`
+-   creates a root container if needed
+-   renders your component via React 18
+
+``` javascript
 await camisLowcoder.render(MyComponent);
 ```
 
 Equivalent to:
 
-```javascript
+``` javascript
 const Connected = Lowcoder.connect(MyComponent);
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<Connected />);
+const root = ReactDOM.createRoot(document.getElementById("camis-root"));
+root.render(React.createElement(Connected));
 ```
 
----
+------------------------------------------------------------------------
 
-## runQuery()
+### `camisLowcoder.configure(options)`
 
-Handles differences between **Lowcoder Editor** and **Embed mode**.
+Override default configuration.
 
-```javascript
-camisLowcoder.runQuery(runQuery, "query1");
-```
-
-or
-
-```javascript
-camisLowcoder.query.run(runQuery, "query1");
-```
-
-Internally this resolves the correct invocation:
-
-Editor / Preview:
-
-```javascript
-runQuery({ queryName: "query1" })
-```
-
-Embed:
-
-```javascript
-runQuery("query1")
-```
-
----
-
-# Configuration
-
-Override default settings:
-
-```javascript
+``` javascript
 camisLowcoder.configure({
-  embedHost: "https://your-lowcoder-host.com"
+  embedHost: "https://sdk.lowcoder.cloud"
 });
 ```
 
 Available options:
 
-| option       | description                        |
-| ------------ | ---------------------------------- |
-| embedHost    | hostname used to detect embed mode |
-| antdCss      | Ant Design CSS URL                 |
-| antdJs       | Ant Design JS URL                  |
-| rootSelector | default React root container       |
+  -------------------------------------------------------------------------------------------------
+  Option                  Description             Default
+  ----------------------- ----------------------- -------------------------------------------------
+  antdCss                 Ant Design CSS URL      https://unpkg.com/antd@4.21.4/dist/antd.min.css
 
----
+  antdJs                  Ant Design JS URL       https://unpkg.com/antd@4.21.4/dist/antd.min.js
 
-# Advanced Example
+  embedHost               Hostname used to detect https://sdk.lowcoder.cloud
+                          embed mode              
 
-Custom root element:
+  rootSelector            Reserved config field   #root
+                          from earlier design     
+  -------------------------------------------------------------------------------------------------
 
-```html
-<div id="widget"></div>
+Note: rendering currently uses an automatic container with id
+`camis-root`.
 
-<script type="text/babel">
+------------------------------------------------------------------------
 
-const Widget = ({ runQuery }) => {
-
-  const { Button } = antd;
-
-  return (
-    <Button
-      onClick={() =>
-        camisLowcoder.runQuery(runQuery,"query1")
-      }
-    >
-      Trigger
-    </Button>
-  );
-};
-
-(async () => {
-  await camisLowcoder.render(Widget,{
-    rootSelector:"#widget"
-  });
-})();
-
-</script>
-```
-
----
-
-# Architecture
+## Architecture
 
 The SDK is structured into modular domains:
 
-| module | purpose                          |
-| ------ | -------------------------------- |
-| core   | shared configuration and loaders |
-| detect | environment detection            |
-| query  | Lowcoder query compatibility     |
-| assets | external asset management        |
-| react  | React rendering helpers          |
+  Module   Purpose
+  -------- ----------------------------------
+  core     shared configuration and loaders
+  detect   environment detection
+  query    Lowcoder query compatibility
+  assets   external asset management
+  react    React rendering helpers
 
----
+------------------------------------------------------------------------
 
-# Why This Exists
-
-Lowcoder custom components normally require repetitive boilerplate:
-
-```javascript
-const ConnectedComponent = Lowcoder.connect(Component);
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<ConnectedComponent />);
-```
-
-`camis-lowcoder` abstracts this into a single line:
-
-```javascript
-await camisLowcoder.render(Component);
-```
-
----
-
-# Browser Support
+## Browser Support
 
 Modern browsers with:
 
-* ES6
-* async/await
-* Promise
-* React 18
+-   ES6
+-   async/await
+-   Promise
+-   React 18
 
----
+------------------------------------------------------------------------
 
-# License
+## License
 
 MIT
