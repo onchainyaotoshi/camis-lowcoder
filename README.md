@@ -29,13 +29,7 @@ less boilerplate.
 Use it directly from jsDelivr:
 
 ``` html
-<script src="https://cdn.jsdelivr.net/gh/onchainyaotoshi/camis-lowcoder/camis-lowcoder.js"></script>
-```
-
-You can also lock to a specific version:
-
-``` html
-<script src="https://cdn.jsdelivr.net/gh/onchainyaotoshi/camis-lowcoder@0.0.2/camis-lowcoder.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/onchainyaotoshi/camis-lowcoder@main/camis-lowcoder.js"></script>
 ```
 
 ------------------------------------------------------------------------
