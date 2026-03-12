@@ -5,20 +5,16 @@
             this.doc = global.document;
             this.config = {
                 momentJs: "https://unpkg.com/moment@2.29.4/min/moment.min.js",
-                babelJs: "https://unpkg.com/@babel/standalone/babel.min.js",
                 antdCss: "https://unpkg.com/antd@4.21.4/dist/antd.min.css",
                 antdJs: "https://unpkg.com/antd@4.21.4/dist/antd.min.js",
                 embedHost: "https://sdk.lowcoder.cloud",
                 rootSelector: "#root",
                 autoBoot: true,
-                autoRunBabelScripts: true,
-                babelScriptType: "text/camis-lowcoder-babel",
                 ...options
             };
 
             this._cache = {
                 momentPromise: null,
-                babelPromise: null,
                 antdPromise: null,
                 readyPromise: null,
                 reactRoots: new Map()
@@ -143,26 +139,6 @@
             return this.core._cache.momentPromise;
         }
 
-        async ensureBabel() {
-            if (this.core.global.Babel) {
-                return this.core.global.Babel;
-            }
-
-            if (!this.core._cache.babelPromise) {
-                this.core._cache.babelPromise = (async () => {
-                    await this.core.loadScriptOnce(this.core.config.babelJs);
-
-                    if (!this.core.global.Babel) {
-                        throw new Error("Babel loaded but window.Babel is missing");
-                    }
-
-                    return this.core.global.Babel;
-                })();
-            }
-
-            return this.core._cache.babelPromise;
-        }
-
         async ensureAntd() {
             if (this.core.global.antd) {
                 return this.core.global.antd;
@@ -187,7 +163,6 @@
 
         async ensureAll() {
             await this.ensureAntd();
-            await this.ensureBabel();
         }
 
         ready() {
@@ -213,8 +188,8 @@
                 throw new Error("Lowcoder.connect is not available");
             }
 
-            if (!ReactDOM || typeof ReactDOM.createRoot !== "function") {
-                throw new Error("ReactDOM.createRoot not available");
+            if (!ReactDOM) {
+                throw new Error("ReactDOM is not available");
             }
 
             let rootEl = this.core.doc.getElementById("camis-root");
@@ -231,84 +206,27 @@
             }
 
             const Connected = Lowcoder.connect(Component);
-            const root = ReactDOM.createRoot(rootEl);
 
-            root.render(this.core.global.React.createElement(Connected));
-            this.core._cache.reactRoots.set(rootEl, root);
-
-            return root;
-        }
-    }
-
-    class CamisLowcoderBabelRunner {
-        constructor(core, assets) {
-            this.core = core;
-            this.assets = assets;
-        }
-
-        async runScriptElement(scriptEl) {
-            if (!scriptEl || scriptEl.dataset.camisExecuted === "true") {
-                return;
+            if (typeof ReactDOM.createRoot === "function") {
+                const root = ReactDOM.createRoot(rootEl);
+                root.render(React.createElement(Connected));
+                this.core._cache.reactRoots.set(rootEl, root);
+                return root;
             }
 
-            await this.assets.ready();
-
-            const { Babel } = this.core.global;
-            if (!Babel || typeof Babel.transform !== "function") {
-                throw new Error("Babel.transform is not available");
-            }
-
-            const source = scriptEl.textContent || "";
-            const transformed = Babel.transform(source, {
-                presets: ["react"],
-                plugins: []
-            }).code;
-
-            const execScript = this.core.doc.createElement("script");
-            execScript.type = "text/javascript";
-            execScript.text = transformed;
-
-            this.core.doc.head.appendChild(execScript);
-            this.core.doc.head.removeChild(execScript);
-
-            scriptEl.dataset.camisExecuted = "true";
-        }
-
-        async runAll() {
-            const selector = `script[type="${this.core.config.babelScriptType}"]`;
-            const scripts = Array.from(this.core.doc.querySelectorAll(selector));
-
-            for (const scriptEl of scripts) {
-                await this.runScriptElement(scriptEl);
-            }
-        }
-
-        observe() {
-            const observer = new MutationObserver(async (mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        if (
-                            node &&
-                            node.nodeType === 1 &&
-                            node.tagName === "SCRIPT" &&
-                            node.getAttribute("type") === this.core.config.babelScriptType
-                        ) {
-                            try {
-                                await this.runScriptElement(node);
-                            } catch (err) {
-                                console.error("[camis-lowcoder] Failed to run dynamic babel script:", err);
-                            }
+            if (typeof ReactDOM.render === "function") {
+                ReactDOM.render(React.createElement(Connected), rootEl);
+                this.core._cache.reactRoots.set(rootEl, {
+                    unmount() {
+                        if (typeof ReactDOM.unmountComponentAtNode === "function") {
+                            ReactDOM.unmountComponentAtNode(rootEl);
                         }
                     }
-                }
-            });
+                });
+                return this.core._cache.reactRoots.get(rootEl);
+            }
 
-            observer.observe(this.core.doc.documentElement, {
-                childList: true,
-                subtree: true
-            });
-
-            return observer;
+            throw new Error("No supported ReactDOM render API found");
         }
     }
 
@@ -319,29 +237,12 @@
             this.query = new CamisLowcoderQuery(this.core, this.detect);
             this.assets = new CamisLowcoderAssets(this.core);
             this.react = new CamisLowcoderReact(this.core, this.assets);
-            this.babelRunner = new CamisLowcoderBabelRunner(this.core, this.assets);
+            this.format = CamisLowcoderFormat;
 
             if (this.core.config.autoBoot) {
                 this.assets.ready().catch((err) => {
                     console.error("[camis-lowcoder] asset boot failed:", err);
                 });
-            }
-
-            if (this.core.config.autoRunBabelScripts) {
-                const boot = async () => {
-                    try {
-                        await this.babelRunner.runAll();
-                        this.babelRunner.observe();
-                    } catch (err) {
-                        console.error("[camis-lowcoder] babel boot failed:", err);
-                    }
-                };
-
-                if (this.core.doc.readyState === "loading") {
-                    this.core.doc.addEventListener("DOMContentLoaded", boot, { once: true });
-                } else {
-                    boot();
-                }
             }
         }
 
@@ -361,9 +262,151 @@
         async render(Component) {
             return this.react.render(Component);
         }
+    }
 
-        async runBabelScripts() {
-            return this.babelRunner.runAll();
+    class CamisLowcoderFormat {
+        static get JAKARTA_TZ() {
+            return "Asia/Jakarta";
+        }
+
+        static pad2(value) {
+            return String(value).padStart(2, "0");
+        }
+
+        static isNil(value) {
+            return value === null || value === undefined || value === "";
+        }
+
+        static toNumber(value) {
+            if (this.isNil(value)) return null;
+
+            if (typeof value === "number") {
+                return Number.isFinite(value) ? value : null;
+            }
+
+            if (typeof value === "string") {
+                const trimmed = value.trim();
+                if (!trimmed) return null;
+
+                const normalized = trimmed.replace(/\./g, "").replace(",", ".");
+                const num = Number(normalized);
+
+                return Number.isFinite(num) ? num : null;
+            }
+
+            return null;
+        }
+
+        static numberId(value, fallback = "-") {
+            const num = this.toNumber(value);
+            if (num === null) return fallback;
+
+            try {
+                return new Intl.NumberFormat("id-ID", {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(num);
+            } catch (err) {
+                return fallback;
+            }
+        }
+
+        static percentId(value, fractionDigits = 2, fallback = "-") {
+            const num = this.toNumber(value);
+            if (num === null) return fallback;
+
+            try {
+                return new Intl.NumberFormat("id-ID", {
+                    minimumFractionDigits: fractionDigits,
+                    maximumFractionDigits: fractionDigits
+                }).format(num);
+            } catch (err) {
+                return fallback;
+            }
+        }
+
+        static parseDateInput(value) {
+            if (this.isNil(value)) return null;
+
+            if (value instanceof Date) {
+                return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
+            }
+
+            if (typeof value === "number") {
+                const date = new Date(value);
+                return Number.isNaN(date.getTime()) ? null : date;
+            }
+
+            if (typeof value === "string") {
+                const trimmed = value.trim();
+                if (!trimmed) return null;
+
+                if (/^\d+$/.test(trimmed)) {
+                    const asNumber = Number(trimmed);
+                    const dateFromNumber = new Date(asNumber);
+                    return Number.isNaN(dateFromNumber.getTime()) ? null : dateFromNumber;
+                }
+
+                if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+                    const date = new Date(trimmed + "T00:00:00+07:00");
+                    return Number.isNaN(date.getTime()) ? null : date;
+                }
+
+                const parsed = new Date(trimmed);
+                return Number.isNaN(parsed.getTime()) ? null : parsed;
+            }
+
+            return null;
+        }
+
+        static getJakartaParts(value) {
+            const date = this.parseDateInput(value);
+            if (!date) return null;
+
+            try {
+                const formatter = new Intl.DateTimeFormat("en-CA", {
+                    timeZone: this.JAKARTA_TZ,
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false
+                });
+
+                const parts = formatter.formatToParts(date);
+                const map = {};
+
+                for (const part of parts) {
+                    if (part.type !== "literal") {
+                        map[part.type] = part.value;
+                    }
+                }
+
+                return {
+                    year: map.year,
+                    month: map.month,
+                    day: map.day,
+                    hour: map.hour,
+                    minute: map.minute
+                };
+            } catch (err) {
+                return null;
+            }
+        }
+
+        static dateYmd(value, fallback = "-") {
+            const parts = this.getJakartaParts(value);
+            if (!parts) return fallback;
+
+            return `${parts.year}-${parts.month}-${parts.day}`;
+        }
+
+        static dateYmdHm(value, fallback = "-") {
+            const parts = this.getJakartaParts(value);
+            if (!parts) return fallback;
+
+            return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
         }
     }
 
