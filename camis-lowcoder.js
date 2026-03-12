@@ -10,6 +10,9 @@
                 embedHost: "https://sdk.lowcoder.cloud",
                 rootSelector: "#root",
                 autoBoot: true,
+                postMessageType: "camis-lowcoder:size",
+                postMessageTargetOrigin: "*",
+                autoReportSizeOnRender: true,
                 ...options
             };
 
@@ -156,10 +159,79 @@
         }
     }
 
+    class CamisLowcoderBridge {
+        constructor(core) {
+            this.core = core;
+        }
+
+        getRootElement() {
+            return this.core.doc.getElementById("camis-root");
+        }
+
+        measure() {
+            const rootEl = this.getRootElement();
+
+            if (!rootEl) {
+                return {
+                    width: 0,
+                    height: 0
+                };
+            }
+
+            const rect = rootEl.getBoundingClientRect();
+
+            const width = Math.max(
+                Math.ceil(rect.width || 0),
+                Math.ceil(rootEl.scrollWidth || 0),
+                Math.ceil(rootEl.offsetWidth || 0)
+            );
+
+            const height = Math.max(
+                Math.ceil(rect.height || 0),
+                Math.ceil(rootEl.scrollHeight || 0),
+                Math.ceil(rootEl.offsetHeight || 0)
+            );
+
+            return { width, height };
+        }
+
+        report(extraPayload = {}) {
+            const size = this.measure();
+
+            try {
+                this.core.global.parent.postMessage(
+                    {
+                        type: this.core.config.postMessageType,
+                        source: "camis-lowcoder",
+                        width: size.width,
+                        height: size.height,
+                        href: this.core.global.location?.href || "",
+                        ts: Date.now(),
+                        ...extraPayload
+                    },
+                    this.core.config.postMessageTargetOrigin || "*"
+                );
+            } catch (err) {
+                console.error("[camis-lowcoder] postMessage failed:", err);
+            }
+        }
+
+        reportOnceAfterRender(extraPayload = {}) {
+            if (!this.core.config.autoReportSizeOnRender) {
+                return;
+            }
+
+            setTimeout(() => {
+                this.report(extraPayload);
+            }, 0);
+        }
+    }
+
     class CamisLowcoderReact {
-        constructor(core, assets) {
+        constructor(core, assets, bridge) {
             this.core = core;
             this.assets = assets;
+            this.bridge = bridge;
         }
 
         async render(Component) {
@@ -194,6 +266,11 @@
                 const root = ReactDOM.createRoot(rootEl);
                 root.render(React.createElement(Connected));
                 this.core._cache.reactRoots.set(rootEl, root);
+
+                if (this.bridge) {
+                    this.bridge.reportOnceAfterRender();
+                }
+
                 return root;
             }
 
@@ -206,6 +283,11 @@
                         }
                     }
                 });
+
+                if (this.bridge) {
+                    this.bridge.reportOnceAfterRender();
+                }
+
                 return this.core._cache.reactRoots.get(rootEl);
             }
 
@@ -388,7 +470,8 @@
             this.core = new CamisLowcoderCore(options);
             this.detect = new CamisLowcoderDetect(this.core);
             this.assets = new CamisLowcoderAssets(this.core);
-            this.react = new CamisLowcoderReact(this.core, this.assets);
+            this.bridge = new CamisLowcoderBridge(this.core);
+            this.react = new CamisLowcoderReact(this.core, this.assets, this.bridge);
             this.format = CamisLowcoderFormat;
 
             if (this.core.config.autoBoot) {
@@ -412,6 +495,12 @@
 
         async ready() {
             return this.assets.ready();
+        }
+
+        reportSize(extraPayload = {}) {
+            if (this.bridge) {
+                this.bridge.report(extraPayload);
+            }
         }
 
         async render(Component) {
