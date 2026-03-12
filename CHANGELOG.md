@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.12](https://github.com/onchainyaotoshi/camis-lowcoder/compare/v0.0.11...v0.0.12) (2026-03-12)
+
+
+### Features
+
+* test ([7358b74](https://github.com/onchainyaotoshi/camis-lowcoder/commit/7358b74e707a46319a833376771eee75fde440a7))
+
 ### [0.0.11](https://github.com/onchainyaotoshi/camis-lowcoder/compare/v0.0.10...v0.0.11) (2026-03-12)
 
 
