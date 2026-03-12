@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.0.9](https://github.com/onchainyaotoshi/camis-lowcoder/compare/v0.0.8...v0.0.9) (2026-03-12)
+
+
+### Features
+
+* report size to parent frame ([b8712bf](https://github.com/onchainyaotoshi/camis-lowcoder/commit/b8712bfc587545a3351ce590b90d7a7d7119ba9e))
+
 ### [0.0.8](https://github.com/onchainyaotoshi/camis-lowcoder/compare/v0.0.7...v0.0.8) (2026-03-12)
 
 
