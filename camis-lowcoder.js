@@ -4,6 +4,8 @@
             this.global = global;
             this.doc = global.document;
             this.config = {
+                momentJs: "https://unpkg.com/moment@2.29.4/min/moment.min.js",
+                babelJs: "https://unpkg.com/@babel/standalone/babel.min.js",
                 antdCss: "https://unpkg.com/antd@4.21.4/dist/antd.min.css",
                 antdJs: "https://unpkg.com/antd@4.21.4/dist/antd.min.js",
                 embedHost: "https://sdk.lowcoder.cloud",
@@ -12,6 +14,8 @@
             };
 
             this._cache = {
+                momentPromise: null,
+                babelPromise: null,
                 antdPromise: null,
                 reactRoots: new Map()
             };
@@ -115,6 +119,46 @@
             this.core = core;
         }
 
+        async ensureMoment() {
+            if (this.core.global.moment) {
+                return this.core.global.moment;
+            }
+
+            if (!this.core._cache.momentPromise) {
+                this.core._cache.momentPromise = (async () => {
+                    await this.core.loadScriptOnce(this.core.config.momentJs);
+
+                    if (!this.core.global.moment) {
+                        throw new Error("Moment loaded but window.moment is missing");
+                    }
+
+                    return this.core.global.moment;
+                })();
+            }
+
+            return this.core._cache.momentPromise;
+        }
+
+        async ensureBabel() {
+            if (this.core.global.Babel) {
+                return this.core.global.Babel;
+            }
+
+            if (!this.core._cache.babelPromise) {
+                this.core._cache.babelPromise = (async () => {
+                    await this.core.loadScriptOnce(this.core.config.babelJs);
+
+                    if (!this.core.global.Babel) {
+                        throw new Error("Babel loaded but window.Babel is missing");
+                    }
+
+                    return this.core.global.Babel;
+                })();
+            }
+
+            return this.core._cache.babelPromise;
+        }
+
         async ensureAntd() {
             if (this.core.global.antd) {
                 return this.core.global.antd;
@@ -123,6 +167,7 @@
             if (!this.core._cache.antdPromise) {
                 this.core._cache.antdPromise = (async () => {
                     await this.core.loadCssOnce(this.core.config.antdCss);
+                    await this.ensureMoment(); // wajib sebelum antd
                     await this.core.loadScriptOnce(this.core.config.antdJs);
 
                     if (!this.core.global.antd) {
@@ -135,47 +180,50 @@
 
             return this.core._cache.antdPromise;
         }
+
+        async ensureAll() {
+            await this.ensureAntd();
+            await this.ensureBabel();
+        }
     }
 
     class CamisLowcoderReact {
-  constructor(core, assets) {
-    this.core = core;
-    this.assets = assets;
-  }
+        constructor(core, assets) {
+            this.core = core;
+            this.assets = assets;
+        }
 
-  async render(Component) {
+        async render(Component) {
+            await this.assets.ensureAll();
 
-    await this.assets.ensureAntd();
+            const { React, ReactDOM, Lowcoder } = this.core.global;
 
-    const { React, ReactDOM, Lowcoder } = this.core.global;
+            if (!Lowcoder?.connect) {
+                throw new Error("Lowcoder.connect is not available");
+            }
 
-    if (!Lowcoder?.connect) {
-      throw new Error("Lowcoder.connect is not available");
+            if (!ReactDOM?.createRoot) {
+                throw new Error("ReactDOM.createRoot not available");
+            }
+
+            let rootEl = this.core.doc.getElementById("camis-root");
+
+            if (!rootEl) {
+                rootEl = this.core.doc.createElement("div");
+                rootEl.id = "camis-root";
+                this.core.doc.body.appendChild(rootEl);
+            }
+
+            const Connected = Lowcoder.connect(Component);
+            const root = ReactDOM.createRoot(rootEl);
+
+            root.render(
+                React.createElement(Connected)
+            );
+
+            return root;
+        }
     }
-
-    if (!ReactDOM?.createRoot) {
-      throw new Error("ReactDOM.createRoot not available");
-    }
-
-    let rootEl = this.core.doc.getElementById("camis-root");
-
-    if (!rootEl) {
-      rootEl = this.core.doc.createElement("div");
-      rootEl.id = "camis-root";
-      this.core.doc.body.appendChild(rootEl);
-    }
-
-    const Connected = Lowcoder.connect(Component);
-
-    const root = ReactDOM.createRoot(rootEl);
-
-    root.render(
-      React.createElement(Connected)
-    );
-
-    return root;
-  }
-}
 
     class CamisLowcoder {
         constructor(options = {}) {
@@ -196,7 +244,7 @@
         }
 
         async ready() {
-            return this.assets.ensureAntd();
+            return this.assets.ensureAll();
         }
 
         async render(Component, options = {}) {
