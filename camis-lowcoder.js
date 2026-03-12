@@ -97,23 +97,6 @@
         }
     }
 
-    class CamisLowcoderQuery {
-        constructor(core, detect) {
-            this.core = core;
-            this.detect = detect;
-        }
-
-        run(runQuery, queryName) {
-            if (typeof runQuery !== "function" || !queryName) return;
-
-            if (this.detect.isEmbed()) {
-                return runQuery(queryName);
-            }
-
-            return runQuery({ queryName });
-        }
-    }
-
     class CamisLowcoderAssets {
         constructor(core) {
             this.core = core;
@@ -230,47 +213,9 @@
         }
     }
 
-    class CamisLowcoder {
-        constructor(options = {}) {
-            this.core = new CamisLowcoderCore(options);
-            this.detect = new CamisLowcoderDetect(this.core);
-            this.query = new CamisLowcoderQuery(this.core, this.detect);
-            this.assets = new CamisLowcoderAssets(this.core);
-            this.react = new CamisLowcoderReact(this.core, this.assets);
-            this.format = CamisLowcoderFormat;
-
-            if (this.core.config.autoBoot) {
-                this.assets.ready().catch((err) => {
-                    console.error("[camis-lowcoder] asset boot failed:", err);
-                });
-            }
-        }
-
-        configure(options = {}) {
-            this.core.configure(options);
-            return this;
-        }
-
-        runQuery(runQuery, queryName) {
-            return this.query.run(runQuery, queryName);
-        }
-
-        async ready() {
-            return this.assets.ready();
-        }
-
-        async render(Component) {
-            return this.react.render(Component);
-        }
-    }
-
     class CamisLowcoderFormat {
         static get JAKARTA_TZ() {
             return "Asia/Jakarta";
-        }
-
-        static pad2(value) {
-            return String(value).padStart(2, "0");
         }
 
         static isNil(value) {
@@ -410,6 +355,72 @@
         }
     }
 
+    class CamisLowcoderComponent {
+        constructor(props = {}, services = {}) {
+            this.runQuery = props.runQuery;
+            this.model = props.model || {};
+            this.updateModel = props.updateModel;
+            this.detect = services.detect;
+            this.format = services.format;
+        }
+
+        query(queryName) {
+            const nextQueryName = queryName || this.model?.query;
+
+            if (typeof this.runQuery !== "function" || !nextQueryName) {
+                return;
+            }
+
+            if (this.detect && this.detect.isEmbed()) {
+                return this.runQuery(nextQueryName);
+            }
+
+            return this.runQuery({ queryName: nextQueryName });
+        }
+
+        refresh(queryName) {
+            return this.query(queryName);
+        }
+    }
+
+    class CamisLowcoder {
+        constructor(options = {}) {
+            this.core = new CamisLowcoderCore(options);
+            this.detect = new CamisLowcoderDetect(this.core);
+            this.assets = new CamisLowcoderAssets(this.core);
+            this.react = new CamisLowcoderReact(this.core, this.assets);
+            this.format = CamisLowcoderFormat;
+
+            if (this.core.config.autoBoot) {
+                this.assets.ready().catch((err) => {
+                    console.error("[camis-lowcoder] asset boot failed:", err);
+                });
+            }
+        }
+
+        configure(options = {}) {
+            this.core.configure(options);
+            return this;
+        }
+
+        component(props = {}) {
+            return new CamisLowcoderComponent(props, {
+                detect: this.detect,
+                format: this.format
+            });
+        }
+
+        async ready() {
+            return this.assets.ready();
+        }
+
+        async render(Component) {
+            return this.react.render(Component);
+        }
+    }
+
     global.CamisLowcoder = CamisLowcoder;
+    global.CamisLowcoderFormat = CamisLowcoderFormat;
+    global.CamisLowcoderComponent = CamisLowcoderComponent;
     global.camisLowcoder = new CamisLowcoder();
 })(window);
