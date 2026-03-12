@@ -5,11 +5,12 @@
             this.doc = global.document;
             this.config = {
                 momentJs: "https://unpkg.com/moment@2.29.4/min/moment.min.js",
-                antdCss: "https://unpkg.com/antd@4.21.4/dist/antd.min.css",
-                antdJs: "https://unpkg.com/antd@4.21.4/dist/antd.min.js",
+                antdCss: "https://unpkg.com/antd@6.3.2/dist/reset.css",
+                antdJs: "https://unpkg.com/antd@6.3.2/dist/antd.min.js",
                 embedHost: "https://sdk.lowcoder.cloud",
                 rootSelector: "#root",
                 autoBoot: true,
+                antdTheme: "dark",
                 ...options
             };
 
@@ -162,6 +163,38 @@
             this.assets = assets;
         }
 
+        getAntdThemeConfig() {
+            const antd = this.core.global.antd;
+            const themeApi = antd?.theme || {};
+
+            if (this.core.config.antdTheme === "dark") {
+                return {
+                    algorithm: themeApi.darkAlgorithm
+                };
+            }
+
+            return {
+                algorithm: themeApi.defaultAlgorithm
+            };
+        }
+
+        createWrappedElement(Connected) {
+            const { React, antd } = this.core.global;
+            const ConfigProvider = antd?.ConfigProvider;
+
+            if (!ConfigProvider) {
+                return React.createElement(Connected);
+            }
+
+            return React.createElement(
+                ConfigProvider,
+                {
+                    theme: this.getAntdThemeConfig()
+                },
+                React.createElement(Connected)
+            );
+        }
+
         async render(Component) {
             await this.assets.ready();
 
@@ -189,16 +222,17 @@
             }
 
             const Connected = Lowcoder.connect(Component);
+            const element = this.createWrappedElement(Connected);
 
             if (typeof ReactDOM.createRoot === "function") {
                 const root = ReactDOM.createRoot(rootEl);
-                root.render(React.createElement(Connected));
+                root.render(element);
                 this.core._cache.reactRoots.set(rootEl, root);
                 return root;
             }
 
             if (typeof ReactDOM.render === "function") {
-                ReactDOM.render(React.createElement(Connected), rootEl);
+                ReactDOM.render(element, rootEl);
                 this.core._cache.reactRoots.set(rootEl, {
                     unmount() {
                         if (typeof ReactDOM.unmountComponentAtNode === "function") {
