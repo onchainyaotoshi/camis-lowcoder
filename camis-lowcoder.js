@@ -10,6 +10,9 @@
                 antdJs: "https://unpkg.com/antd@4.21.4/dist/antd.min.js",
                 embedHost: "https://sdk.lowcoder.cloud",
                 rootSelector: "#root",
+                autoBoot: true,
+                autoRunBabelScripts: true,
+                babelScriptType: "text/camis-lowcoder-babel",
                 ...options
             };
 
@@ -17,6 +20,7 @@
                 momentPromise: null,
                 babelPromise: null,
                 antdPromise: null,
+                readyPromise: null,
                 reactRoots: new Map()
             };
         }
@@ -167,7 +171,7 @@
             if (!this.core._cache.antdPromise) {
                 this.core._cache.antdPromise = (async () => {
                     await this.core.loadCssOnce(this.core.config.antdCss);
-                    await this.ensureMoment(); // wajib sebelum antd
+                    await this.ensureMoment();
                     await this.core.loadScriptOnce(this.core.config.antdJs);
 
                     if (!this.core.global.antd) {
@@ -185,6 +189,13 @@
             await this.ensureAntd();
             await this.ensureBabel();
         }
+
+        ready() {
+            if (!this.core._cache.readyPromise) {
+                this.core._cache.readyPromise = this.ensureAll();
+            }
+            return this.core._cache.readyPromise;
+        }
     }
 
     class CamisLowcoderReact {
@@ -194,15 +205,15 @@
         }
 
         async render(Component) {
-            await this.assets.ensureAll();
+            await this.assets.ready();
 
             const { React, ReactDOM, Lowcoder } = this.core.global;
 
-            if (!Lowcoder?.connect) {
+            if (!Lowcoder || typeof Lowcoder.connect !== "function") {
                 throw new Error("Lowcoder.connect is not available");
             }
 
-            if (!ReactDOM?.createRoot) {
+            if (!ReactDOM || typeof ReactDOM.createRoot !== "function") {
                 throw new Error("ReactDOM.createRoot not available");
             }
 
@@ -214,14 +225,90 @@
                 this.core.doc.body.appendChild(rootEl);
             }
 
+            const prevRoot = this.core._cache.reactRoots.get(rootEl);
+            if (prevRoot && typeof prevRoot.unmount === "function") {
+                prevRoot.unmount();
+            }
+
             const Connected = Lowcoder.connect(Component);
             const root = ReactDOM.createRoot(rootEl);
 
-            root.render(
-                React.createElement(Connected)
-            );
+            root.render(this.core.global.React.createElement(Connected));
+            this.core._cache.reactRoots.set(rootEl, root);
 
             return root;
+        }
+    }
+
+    class CamisLowcoderBabelRunner {
+        constructor(core, assets) {
+            this.core = core;
+            this.assets = assets;
+        }
+
+        async runScriptElement(scriptEl) {
+            if (!scriptEl || scriptEl.dataset.camisExecuted === "true") {
+                return;
+            }
+
+            await this.assets.ready();
+
+            const { Babel } = this.core.global;
+            if (!Babel || typeof Babel.transform !== "function") {
+                throw new Error("Babel.transform is not available");
+            }
+
+            const source = scriptEl.textContent || "";
+            const transformed = Babel.transform(source, {
+                presets: ["react"],
+                plugins: []
+            }).code;
+
+            const execScript = this.core.doc.createElement("script");
+            execScript.type = "text/javascript";
+            execScript.text = transformed;
+
+            this.core.doc.head.appendChild(execScript);
+            this.core.doc.head.removeChild(execScript);
+
+            scriptEl.dataset.camisExecuted = "true";
+        }
+
+        async runAll() {
+            const selector = `script[type="${this.core.config.babelScriptType}"]`;
+            const scripts = Array.from(this.core.doc.querySelectorAll(selector));
+
+            for (const scriptEl of scripts) {
+                await this.runScriptElement(scriptEl);
+            }
+        }
+
+        observe() {
+            const observer = new MutationObserver(async (mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (
+                            node &&
+                            node.nodeType === 1 &&
+                            node.tagName === "SCRIPT" &&
+                            node.getAttribute("type") === this.core.config.babelScriptType
+                        ) {
+                            try {
+                                await this.runScriptElement(node);
+                            } catch (err) {
+                                console.error("[camis-lowcoder] Failed to run dynamic babel script:", err);
+                            }
+                        }
+                    }
+                }
+            });
+
+            observer.observe(this.core.doc.documentElement, {
+                childList: true,
+                subtree: true
+            });
+
+            return observer;
         }
     }
 
@@ -232,6 +319,30 @@
             this.query = new CamisLowcoderQuery(this.core, this.detect);
             this.assets = new CamisLowcoderAssets(this.core);
             this.react = new CamisLowcoderReact(this.core, this.assets);
+            this.babelRunner = new CamisLowcoderBabelRunner(this.core, this.assets);
+
+            if (this.core.config.autoBoot) {
+                this.assets.ready().catch((err) => {
+                    console.error("[camis-lowcoder] asset boot failed:", err);
+                });
+            }
+
+            if (this.core.config.autoRunBabelScripts) {
+                const boot = async () => {
+                    try {
+                        await this.babelRunner.runAll();
+                        this.babelRunner.observe();
+                    } catch (err) {
+                        console.error("[camis-lowcoder] babel boot failed:", err);
+                    }
+                };
+
+                if (this.core.doc.readyState === "loading") {
+                    this.core.doc.addEventListener("DOMContentLoaded", boot, { once: true });
+                } else {
+                    boot();
+                }
+            }
         }
 
         configure(options = {}) {
@@ -244,11 +355,15 @@
         }
 
         async ready() {
-            return this.assets.ensureAll();
+            return this.assets.ready();
         }
 
-        async render(Component, options = {}) {
-            return this.react.render(Component, options);
+        async render(Component) {
+            return this.react.render(Component);
+        }
+
+        async runBabelScripts() {
+            return this.babelRunner.runAll();
         }
     }
 
