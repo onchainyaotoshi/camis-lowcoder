@@ -215,16 +215,6 @@
                 console.error("[camis-lowcoder] postMessage failed:", err);
             }
         }
-
-        reportOnceAfterRender(extraPayload = {}) {
-            if (!this.core.config.autoReportSizeOnRender) {
-                return;
-            }
-
-            setTimeout(() => {
-                this.report(extraPayload);
-            }, 0);
-        }
     }
 
     class CamisLowcoderReact {
@@ -262,20 +252,36 @@
 
             const Connected = Lowcoder.connect(Component);
 
+            const Reporter = () => {
+                React.useLayoutEffect(() => {
+                    if (!this.bridge || !this.core.config.autoReportSizeOnRender) {
+                        return;
+                    }
+
+                    const raf = this.core.global.requestAnimationFrame;
+                    if (typeof raf === "function") {
+                        raf(() => {
+                            this.bridge.report();
+                        });
+                    } else {
+                        setTimeout(() => {
+                            this.bridge.report();
+                        }, 16);
+                    }
+                }, []);
+
+                return React.createElement(Connected);
+            };
+
             if (typeof ReactDOM.createRoot === "function") {
                 const root = ReactDOM.createRoot(rootEl);
-                root.render(React.createElement(Connected));
+                root.render(React.createElement(Reporter));
                 this.core._cache.reactRoots.set(rootEl, root);
-
-                if (this.bridge) {
-                    this.bridge.reportOnceAfterRender();
-                }
-
                 return root;
             }
 
             if (typeof ReactDOM.render === "function") {
-                ReactDOM.render(React.createElement(Connected), rootEl);
+                ReactDOM.render(React.createElement(Reporter), rootEl);
                 this.core._cache.reactRoots.set(rootEl, {
                     unmount() {
                         if (typeof ReactDOM.unmountComponentAtNode === "function") {
@@ -283,10 +289,6 @@
                         }
                     }
                 });
-
-                if (this.bridge) {
-                    this.bridge.reportOnceAfterRender();
-                }
 
                 return this.core._cache.reactRoots.get(rootEl);
             }
