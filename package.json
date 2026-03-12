@@ -1,0 +1,22 @@
+{
+  "name": "camis-lowcoder",
+  "version": "0.0.3",
+  "description": "Helper SDK for Lowcoder custom components",
+  "main": "camis-lowcoder.js",
+  "license": "MIT",
+  "scripts": {
+    "commit": "cz",
+    "release": "standard-version && git push origin HEAD --follow-tags",
+    "ship": "git add . && npm run commit && npm run release"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  },
+  "devDependencies": {
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "standard-version": "^9.5.0"
+  }
+}
