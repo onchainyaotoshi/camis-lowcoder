@@ -1,6 +1,6 @@
 {
   "name": "camis-lowcoder",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Helper SDK for Lowcoder custom components",
   "main": "camis-lowcoder.js",
   "license": "MIT",
