@@ -1,0 +1,7 @@
+{
+  "name": "camis-lowcoder",
+  "version": "0.0.1",
+  "description": "Helper SDK for Lowcoder custom components",
+  "main": "camis-lowcoder.js",
+  "license": "MIT"
+}
